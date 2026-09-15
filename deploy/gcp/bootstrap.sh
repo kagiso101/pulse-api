@@ -28,7 +28,7 @@ SQL_INSTANCE="bookr-pg"
 SQL_CONNECTION="$PROJECT:$REGION:$SQL_INSTANCE"
 RUN_SA="pulse-api-run@$PROJECT.iam.gserviceaccount.com"
 SCHEDULER_SA="pulse-scheduler@$PROJECT.iam.gserviceaccount.com"
-WEB_ORIGIN="${WEB_ORIGIN:-https://pulse-web.netlify.app}"
+WEB_ORIGIN="${WEB_ORIGIN:-https://rogue-pulse.netlify.app}"
 # Bookvas API Pulse reads from: SIT until production is promoted (flip with --update-env-vars).
 BOOKVAS_API_BASE_URL="${BOOKVAS_API_BASE_URL:-https://bookr-api-sit-rx2kzgepoa-bq.a.run.app}"
 BOOKVAS_SUPER_EMAIL="${BOOKVAS_SUPER_EMAIL:-pulse@rogue-tech.co.za}"
