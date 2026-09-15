@@ -1,0 +1,55 @@
+# Copy to application-local.properties (gitignored) and fill in real values.
+# Names match the Secret Manager secrets used in production (PULSE-CONTRACT.md §6).
+
+# Postgres — local default is the pulse-pg Docker container:
+#   docker run -d --name pulse-pg -p 55432:5432 -e POSTGRES_DB=pulse -e POSTGRES_USER=pulse -e POSTGRES_PASSWORD=pulse postgres:16
+#DB_URL=jdbc:postgresql://localhost:55432/pulse
+#DB_USER=pulse
+DB_PASSWORD=pulse
+
+# HS256 signing key, at least 32 bytes:  openssl rand -hex 32
+PULSE_JWT_SECRET=change-me-64-hex-chars
+
+# The single Google account allowed to sign in + the OAuth client id the frontend uses.
+PULSE_ALLOWED_EMAIL=you@example.com
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+
+# Local-dev shared secret so you can POST /internal/jobs/* with "X-Job-Token: <value>".
+JOBS_TOKEN=devjob
+# Run the jobs in-process on a timer as well (prod uses Cloud Scheduler).
+#PULSE_INPROCESS_SCHEDULING=true
+
+# --- Connectors: all optional. Missing = "not configured" in Settings, skipped by jobs. ----
+# GA4 Data + Admin (paste the whole service-account JSON on one line)
+#GA4_SA_JSON={"type":"service_account",...}
+#GA4_ACCOUNT_NAME=ROGUETECHNOLOGIES
+# Bookvas super-admin (read via its /api/platform/** endpoints only)
+#BOOKVAS_API_BASE_URL=https://bookr-api-898880840502.africa-south1.run.app
+#BOOKVAS_SUPER_EMAIL=
+#BOOKVAS_SUPER_PASSWORD=
+#NETLIFY_TOKEN=
+# Cloud Run Admin uses Application Default Credentials (gcloud auth application-default login)
+#GCP_PROJECT_ID=bookings-prod-503907
+#GCP_REGION=africa-south1
+#BILLING_EXPORT_TABLE=bookings-prod-503907.billing.gcp_billing_export_v1_XXXX
+#GITHUB_TOKEN=
+#GITHUB_WEBHOOK_SECRET=
+
+# --- Notifications (Brevo SMTP relay, same names as bookr-api) ------------------------------
+#spring.mail.host=smtp-relay.brevo.com
+#spring.mail.port=587
+#spring.mail.username=your-brevo-login
+#spring.mail.password=your-brevo-smtp-key
+#MAIL_FROM=Pulse <pulse@rogue-tech.co.za>
+#MAIL_TO=you@example.com
+#WHATSAPP_TOKEN=
+#WHATSAPP_PHONE_NUMBER_ID=
+#WHATSAPP_TO=27XXXXXXXXX
+
+# --- Ask ----------------------------------------------------------------------------------
+#ANTHROPIC_API_KEY=
+#ANTHROPIC_MODEL=claude-opus-5
+
+# Local-dev conveniences, OFF by default everywhere
+#SHOW_SQL=true
+#API_DOCS_ENABLED=true

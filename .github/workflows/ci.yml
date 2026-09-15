@@ -1,0 +1,48 @@
+# Tests must pass before main moves. The context-load test needs a real Postgres (Flyway V1+V2
+# against an empty database), mirroring the local pulse-pg container.
+name: CI
+
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: pulse
+          POSTGRES_USER: pulse
+          POSTGRES_PASSWORD: pulse
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pulse"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DB_URL: jdbc:postgresql://localhost:5432/pulse
+      DB_USER: pulse
+      DB_PASSWORD: pulse
+      # CI-only signing key — never a real secret
+      PULSE_JWT_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      PULSE_ALLOWED_EMAIL: ci@example.com
+      GOOGLE_CLIENT_ID: ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Build and test
+        run: ./mvnw -B verify

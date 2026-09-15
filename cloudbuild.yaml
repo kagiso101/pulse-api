@@ -1,0 +1,54 @@
+# Cloud Build pipeline for pulse-api (mirrors bookr-api's).
+#
+# One build config, two triggers (deploy/cloud-build/trigger-*.yaml):
+#   push to development  ->  _SERVICE=pulse-api-sit
+#   merge to main        ->  _SERVICE=pulse-api
+#
+# Builds the multi-stage Dockerfile, pushes to the existing Artifact Registry repo and deploys
+# that exact image to the target Cloud Run service. Environment variables, secrets, the service
+# account, --add-cloudsql-instances and --max-instances=1 are NOT set here: they live on the
+# service (deploy/gcp/bootstrap.sh) and carry over from revision to revision.
+#
+# Rollback: gcloud run services update-traffic <service> --to-revisions=<prev>=100
+substitutions:
+  _SERVICE: pulse-api-sit
+  _REGION: africa-south1
+  _AR_REPO: cloud-run-source-deploy
+  _IMAGE: pulse-api
+
+options:
+  machineType: E2_HIGHCPU_8
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: 1500s
+
+steps:
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --tag=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_IMAGE}:${COMMIT_SHA}
+      - --tag=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_IMAGE}:${BRANCH_NAME}
+      - .
+
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - --all-tags
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_IMAGE}
+
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_IMAGE}:${COMMIT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --quiet
+
+images:
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_IMAGE}:${COMMIT_SHA}

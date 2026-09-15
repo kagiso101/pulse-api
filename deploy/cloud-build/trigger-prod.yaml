@@ -1,0 +1,18 @@
+# Cloud Build trigger: every merge to `main` rebuilds and redeploys PRODUCTION pulse-api.
+# Import only once the SIT service has proven a full cycle (Flyway runs at startup: a merge to
+# main applies pending migrations to the production `pulse` database).
+#   gcloud builds triggers import --region=africa-south1 --source=deploy/cloud-build/trigger-prod.yaml
+name: pulse-api-on-main
+description: "PROD: build + deploy pulse-api on every push to main"
+github:
+  owner: kagiso101
+  name: pulse-api
+  push:
+    branch: ^main$
+filename: cloudbuild.yaml
+substitutions:
+  _SERVICE: pulse-api
+  _REGION: africa-south1
+  _AR_REPO: cloud-run-source-deploy
+  _IMAGE: pulse-api
+includeBuildLogs: INCLUDE_BUILD_LOGS_WITH_STATUS

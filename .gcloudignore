@@ -1,0 +1,11 @@
+.gcloudignore
+.git/
+.gitignore
+target/
+.idea/
+*.iml
+.vscode/
+*.log
+.env
+.env.*
+application-local.properties

@@ -1,0 +1,19 @@
+# Cloud Build trigger: every push to `development` rebuilds and redeploys pulse-api-sit.
+# Apply with:
+#   gcloud builds triggers import --region=africa-south1 --source=deploy/cloud-build/trigger-sit.yaml
+# Prerequisite (browser, once): connect the GitHub repo kagiso101/pulse-api to Cloud Build
+# in this project/region (Cloud Build > Repositories > Connect). See README.md.
+name: pulse-api-sit-on-development
+description: "SIT: build + deploy pulse-api-sit on every push to development"
+github:
+  owner: kagiso101
+  name: pulse-api
+  push:
+    branch: ^development$
+filename: cloudbuild.yaml
+substitutions:
+  _SERVICE: pulse-api-sit
+  _REGION: africa-south1
+  _AR_REPO: cloud-run-source-deploy
+  _IMAGE: pulse-api
+includeBuildLogs: INCLUDE_BUILD_LOGS_WITH_STATUS
