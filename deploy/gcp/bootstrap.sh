@@ -48,11 +48,13 @@ gcloud services enable run.googleapis.com cloudscheduler.googleapis.com secretma
 say "2. Runtime service account (least privilege, spec §8)"
 gcloud iam service-accounts describe "$RUN_SA" --project "$PROJECT" >/dev/null 2>&1 || \
   gcloud iam service-accounts create pulse-api-run --display-name "pulse-api runtime" --project "$PROJECT"
-for ROLE in roles/cloudsql.client roles/run.viewer roles/billing.viewer roles/bigquery.jobUser roles/bigquery.dataViewer; do
+# (no roles/billing.viewer: it is a billing-account role, not grantable on a project, and the
+#  billing connector reads the BigQuery export, which the two BigQuery roles cover)
+for ROLE in roles/cloudsql.client roles/run.viewer roles/bigquery.jobUser roles/bigquery.dataViewer; do
   gcloud projects add-iam-policy-binding "$PROJECT" --member "serviceAccount:$RUN_SA" --role "$ROLE" --quiet >/dev/null
 done
-# the minimum to create a revision on bookr-api (restart action): developer on that ONE service
-gcloud run services add-iam-policy-binding bookr-api --region "$REGION" --project "$PROJECT" \
+# the minimum to create a revision on the Bookvas API the restart action targets (SIT until prod is promoted)
+gcloud run services add-iam-policy-binding "${RESTART_TARGET:-bookr-api-sit}" --region "$REGION" --project "$PROJECT" \
   --member "serviceAccount:$RUN_SA" --role roles/run.developer --quiet >/dev/null || true
 
 say "2b. Cloud Scheduler caller SA (OIDC tokens for /internal/jobs/*)"
