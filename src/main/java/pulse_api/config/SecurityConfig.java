@@ -1,5 +1,6 @@
 package pulse_api.config;
 
+import jakarta.servlet.DispatcherType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -47,6 +48,11 @@ public class SecurityConfig {
                         .authenticationEntryPoint(jsonAuthHandlers)
                         .accessDeniedHandler(jsonAuthHandlers))
                 .authorizeHttpRequests(auth -> auth
+                        // The Ask endpoint streams over SseEmitter. When the stream completes, Tomcat
+                        // re-dispatches the request (DispatcherType.ASYNC) with no SecurityContext; without
+                        // this rule that dispatch is denied after the response is committed, logging a
+                        // ServletException on every Ask. Same for ERROR dispatches.
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
                         .requestMatchers("/v3/api-docs", "/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**",
                                 "/actuator/health").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/google").permitAll()
