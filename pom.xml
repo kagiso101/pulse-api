@@ -20,7 +20,7 @@
 		<google.libraries-bom.version>26.88.1</google.libraries-bom.version>
 		<anthropic.version>2.34.0</anthropic.version>
 		<jjwt.version>0.11.5</jjwt.version>
-		<springdoc.version>2.8.5</springdoc.version>
+		<springdoc.version>3.1.1</springdoc.version>
 	</properties>
 
 	<dependencyManagement>
