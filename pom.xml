@@ -71,7 +71,7 @@
 		<dependency>
 			<groupId>com.google.cloud.sql</groupId>
 			<artifactId>postgres-socket-factory</artifactId>
-			<version>1.29.0</version>
+			<version>1.30.0</version>
 			<scope>runtime</scope>
 		</dependency>
 		<!-- Spring Boot 4 modularised auto-config: the Flyway STARTER (not raw flyway-core) runs migrations on startup -->
