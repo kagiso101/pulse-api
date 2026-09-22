@@ -75,7 +75,7 @@ Seed rows:
 | `bookvas` | Bookvas | product | `G-2DM7Q481M5` property | + Bookvas API connector |
 | `roguetech` | ROGUETECHNOLOGIES | agency | to be created | rogue-tech.co.za |
 | `portfolio` | Portfolio | portfolio | `G-416CJXW1LG` property | kagiso-hadebe.netlify.app |
-| `bruja-thembi` | Bruja Thembi | client_site | optional | brujathembi.com |
+| `bruja-thembi` | Bruja Thembi | client_site | `G-SWVTT8DJ7S` property | brujathembi.com |
 
 **Client sites** get a `client_view_token` — a read-only shareable link showing just their card. Feature 13.
 
