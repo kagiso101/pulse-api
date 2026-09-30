@@ -12,4 +12,8 @@ public interface BookvasPlatformEventRepository extends JpaRepository<BookvasPla
     List<BookvasPlatformEvent> findAllByOrderByHappenedAtDesc(Pageable pageable);
 
     long countByResolvedAtIsNullAndSeverityIgnoreCase(String severity);
+
+    // OPS-VISIBILITY: the alert engine walks each event type forward from the last one it alerted on
+    List<BookvasPlatformEvent> findTop50ByEventTypeAndHappenedAtGreaterThanOrderByHappenedAtAsc(String eventType,
+                                                                                                java.time.Instant since);
 }

@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import pulse_api.entity.AlertEvent;
 import pulse_api.entity.AlertRule;
 import pulse_api.entity.AlertState;
+import pulse_api.entity.BookvasPlatformEvent;
 import pulse_api.entity.BookvasTenantCache;
 import pulse_api.entity.Enums;
 import pulse_api.entity.Enums.AlertKind;
@@ -17,6 +18,7 @@ import pulse_api.entity.UptimeCheck;
 import pulse_api.repository.AlertEventRepository;
 import pulse_api.repository.AlertRuleRepository;
 import pulse_api.repository.AlertStateRepository;
+import pulse_api.repository.BookvasPlatformEventRepository;
 import pulse_api.repository.BookvasTenantCacheRepository;
 import pulse_api.repository.MetricSnapshotRepository;
 import pulse_api.repository.ProjectRepository;
@@ -26,10 +28,12 @@ import pulse_api.service.RangeResolver;
 import pulse_api.service.UptimeStatusService;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -56,6 +60,7 @@ public class AlertEngine {
     private final MetricSnapshotRepository snapshots;
     private final UptimeCheckRepository uptimeChecks;
     private final BookvasTenantCacheRepository tenantCache;
+    private final BookvasPlatformEventRepository platformEvents;
     private final ProspectRepository prospects;
     private final ProjectRepository projects;
     private final Notifier notifier;
@@ -97,6 +102,12 @@ public class AlertEngine {
             case email_failures -> emailFailures(rule);
             case tenant_grace -> tenantGrace(rule);
             case prospect_overdue -> prospectOverdue();
+            // OPS-VISIBILITY: one Pulse alert per Bookvas platform event of the matching type
+            case checkout_stalled -> bookvasOpsEvent(rule, "CHECKOUT_STALLED");
+            case payment_provider_degraded -> bookvasOpsEvent(rule, "PAYMENT_PROVIDER_DEGRADED");
+            case signup_rate_limited -> bookvasOpsEvent(rule, "SIGNUP_RATE_LIMITED");
+            case plan_price_changed -> bookvasOpsEvent(rule, "PLAN_PRICE_CHANGED");
+            case merchant_verification_stalled -> bookvasOpsEvent(rule, "MERCHANT_VERIFICATION_STALLED");
         };
     }
 
@@ -113,8 +124,10 @@ public class AlertEngine {
         event.setDetail(c.detail() == null ? "" : c.detail());
         event.setPayload(c.payload());
         event.setDedupeKey(c.dedupeKey());
-        Notifier.Delivery delivery = notifier.notify(rule.getChannel(), "[Pulse] " + c.title(), c.detail(),
-                rule.getKind() == AlertKind.site_down);
+        String projectName = c.projectId() == null ? null
+                : projects.findById(c.projectId()).map(Project::getName).orElse(null);
+        AlertMessage message = AlertMessage.of(rule.getKind(), c.title(), c.detail(), c.payload(), projectName);
+        Notifier.Delivery delivery = notifier.notify(rule.getChannel(), message, rule.getKind() == AlertKind.site_down);
         event.setDelivered(delivery.delivered());
         event.setChannel(delivery.channelUsed());
         events.save(event);
@@ -272,6 +285,53 @@ public class AlertEngine {
             }
         }
         return out;
+    }
+
+    // ---- OPS-VISIBILITY: Bookvas platform events → alerts --------------------------------------
+
+    /**
+     * Walks the ingested Bookvas events of one type forward from the last one alerted on. Each
+     * event becomes one candidate keyed on the Bookvas event id, so the same event can never fire
+     * twice even across restarts. First sight looks back one day, not forever.
+     */
+    private List<Candidate> bookvasOpsEvent(AlertRule rule, String eventType) {
+        List<Candidate> out = new ArrayList<>();
+        String stateKey = "bookvas_event:" + eventType;
+        String last = textState(stateKey);
+        Instant since = last != null ? Instant.parse(last) : Instant.now().minus(Duration.ofDays(1));
+        UUID projectId = rule.getProjectId() != null ? rule.getProjectId()
+                : bookvasProjects(rule).stream().map(Project::getId).findFirst().orElse(null);
+
+        Instant newest = since;
+        for (BookvasPlatformEvent e : platformEvents.findTop50ByEventTypeAndHappenedAtGreaterThanOrderByHappenedAtAsc(eventType, since)) {
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("bookvasEventId", e.getId().toString());
+            payload.put("eventType", e.getEventType());
+            payload.put("severity", e.getSeverity());
+            payload.put("happenedAt", e.getHappenedAt().toString());
+            if (e.getTenantId() != null) payload.put("tenantId", e.getTenantId().toString());
+            if (e.getTenantName() != null) payload.put("tenant", e.getTenantName());
+            out.add(new Candidate("bookvas_event:" + e.getId(), projectId, opsTitle(eventType, e), e.getMessage(), payload));
+            if (e.getHappenedAt().isAfter(newest)) {
+                newest = e.getHappenedAt();
+            }
+        }
+        if (newest.isAfter(since)) {
+            saveText(stateKey, newest.toString());
+        }
+        return out;
+    }
+
+    private static String opsTitle(String eventType, BookvasPlatformEvent e) {
+        String tenant = e.getTenantName() == null || e.getTenantName().isBlank() ? "" : " — " + e.getTenantName();
+        return switch (eventType) {
+            case "CHECKOUT_STALLED" -> "Bookvas checkout stalled" + tenant;
+            case "PAYMENT_PROVIDER_DEGRADED" -> "PayFast checkouts are stalling on Bookvas";
+            case "SIGNUP_RATE_LIMITED" -> "A Bookvas signup was refused by the rate limiter";
+            case "PLAN_PRICE_CHANGED" -> "Bookvas plan price changed";
+            case "MERCHANT_VERIFICATION_STALLED" -> "Merchant verification stalled" + tenant;
+            default -> "Bookvas: " + eventType.toLowerCase().replace('_', ' ') + tenant;
+        };
     }
 
     // ---- helpers ---------------------------------------------------------------------------

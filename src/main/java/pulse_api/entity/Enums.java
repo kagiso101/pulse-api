@@ -12,7 +12,11 @@ public final class Enums {
 
     public enum UpState { up, down, unknown }
 
-    public enum AlertKind { deposit_paid, founder_seat_claimed, site_down, email_failures, tenant_grace, prospect_overdue }
+    public enum AlertKind {
+        deposit_paid, founder_seat_claimed, site_down, email_failures, tenant_grace, prospect_overdue,
+        // OPS-VISIBILITY (2026-09-30): one kind per Bookvas platform event type worth an alert
+        checkout_stalled, payment_provider_degraded, signup_rate_limited, plan_price_changed, merchant_verification_stalled
+    }
 
     public enum Channel { whatsapp, email, in_app }
 

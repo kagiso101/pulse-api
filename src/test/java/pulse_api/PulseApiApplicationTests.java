@@ -34,8 +34,8 @@ class PulseApiApplicationTests {
 		assertThat(projects.findBySlug("bookvas").get().getGithubRepos())
 				.containsExactly("kagiso101/bookr-api", "kagiso101/bookr-client", "kagiso101/bookr-admin");
 		assertThat(projects.findBySlug("portfolio").get().getGa4MeasurementId()).isEqualTo("G-416CJXW1LG");
-		assertThat(rules.count()).isEqualTo(6);
-		assertThat(rules.findByEnabledTrue()).hasSize(6);
+		assertThat(rules.count()).isEqualTo(11); // 6 from V2 + 5 OPS-VISIBILITY rules from V5
+		assertThat(rules.findByEnabledTrue()).hasSize(11);
 		assertThat(settings.findById(AppSetting.SINGLETON_ID)).isPresent()
 				.get().extracting(AppSetting::getNotificationChannel).isEqualTo("email");
 	}

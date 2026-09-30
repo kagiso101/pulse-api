@@ -6,6 +6,7 @@ import org.mockito.Mockito;
 import pulse_api.entity.AlertEvent;
 import pulse_api.entity.AlertRule;
 import pulse_api.entity.AlertState;
+import pulse_api.entity.BookvasPlatformEvent;
 import pulse_api.entity.BookvasTenantCache;
 import pulse_api.entity.Enums;
 import pulse_api.entity.Enums.AlertKind;
@@ -16,6 +17,7 @@ import pulse_api.entity.UptimeCheck;
 import pulse_api.repository.AlertEventRepository;
 import pulse_api.repository.AlertRuleRepository;
 import pulse_api.repository.AlertStateRepository;
+import pulse_api.repository.BookvasPlatformEventRepository;
 import pulse_api.repository.BookvasTenantCacheRepository;
 import pulse_api.repository.MetricSnapshotRepository;
 import pulse_api.repository.ProjectRepository;
@@ -57,6 +59,7 @@ class AlertEngineTest {
     private final MetricSnapshotRepository snapshots = Mockito.mock(MetricSnapshotRepository.class);
     private final UptimeCheckRepository uptime = Mockito.mock(UptimeCheckRepository.class);
     private final BookvasTenantCacheRepository tenants = Mockito.mock(BookvasTenantCacheRepository.class);
+    private final BookvasPlatformEventRepository platformEvents = Mockito.mock(BookvasPlatformEventRepository.class);
     private final ProspectRepository prospects = Mockito.mock(ProspectRepository.class);
     private final ProjectRepository projects = Mockito.mock(ProjectRepository.class);
     private final Notifier notifier = Mockito.mock(Notifier.class);
@@ -94,12 +97,52 @@ class AlertEngineTest {
             return e;
         });
         when(notifier.notify(any(), anyString(), any(), anyBoolean())).thenReturn(new Notifier.Delivery(false, "in_app"));
+        when(notifier.notify(any(), any(AlertMessage.class), anyBoolean())).thenReturn(new Notifier.Delivery(false, "in_app"));
 
         when(projects.findById(bookvas.getId())).thenReturn(Optional.of(bookvas));
         when(projects.findByActiveTrueAndKind(Enums.ProjectKind.product)).thenReturn(List.of(bookvas));
         when(projects.findByActiveTrueOrderBySortOrderAscNameAsc()).thenReturn(List.of(bookvas));
 
-        engine = new AlertEngine(rules, events, states, snapshots, uptime, tenants, prospects, projects, notifier, ranges);
+        engine = new AlertEngine(rules, events, states, snapshots, uptime, tenants, platformEvents, prospects, projects, notifier, ranges);
+    }
+
+    // ---- OPS-VISIBILITY: Bookvas platform events → alerts ------------------------------------
+
+    @Test
+    void checkoutStalledFiresOncePerBookvasEventAndRendersAsAWarning() {
+        rule(AlertKind.checkout_stalled, Enums.Channel.email, null, true);
+        BookvasPlatformEvent e = new BookvasPlatformEvent();
+        e.setId(UUID.randomUUID());
+        e.setEventType("CHECKOUT_STALLED");
+        e.setSeverity("WARNING");
+        e.setTenantName("Thandi's Nails");
+        e.setMessage("Subscription checkout of R20.00 at Thandi's Nails has had no PayFast confirmation for 20 minutes.");
+        // recent, because first sight only looks back one day from the real clock
+        Instant happened = Instant.now().minusSeconds(120);
+        e.setHappenedAt(happened);
+        when(platformEvents.findTop50ByEventTypeAndHappenedAtGreaterThanOrderByHappenedAtAsc(eq("CHECKOUT_STALLED"), any()))
+                .thenReturn(List.of(e));
+
+        assertThat(engine.evaluate(EnumSet.of(AlertKind.checkout_stalled))).isEqualTo(1);
+        // the same Bookvas event is returned again (mock ignores `since`); the dedupe key blocks it
+        assertThat(engine.evaluate(EnumSet.of(AlertKind.checkout_stalled))).isZero();
+
+        assertThat(fired).hasSize(1);
+        assertThat(fired.get(0).getTitle()).isEqualTo("Bookvas checkout stalled — Thandi's Nails");
+        assertThat(fired.get(0).getDedupeKey()).isEqualTo("bookvas_event:" + e.getId());
+        assertThat(fired.get(0).getPayload()).containsEntry("tenant", "Thandi's Nails");
+        assertThat(stateStore.get("bookvas_event:CHECKOUT_STALLED").getTextValue()).isEqualTo(happened.toString());
+
+        AtomicReference<AlertMessage> sent = new AtomicReference<>();
+        Mockito.verify(notifier).notify(eq(Enums.Channel.email), Mockito.argThat(m -> { sent.set(m); return true; }), eq(false));
+        assertThat(sent.get().severity()).isEqualTo(AlertMessage.Severity.warning);
+        assertThat(sent.get().projectName()).isEqualTo("Bookvas");
+    }
+
+    @Test
+    void providerDegradedIsCritical() {
+        assertThat(AlertMessage.severityOf(AlertKind.payment_provider_degraded)).isEqualTo(AlertMessage.Severity.critical);
+        assertThat(AlertMessage.severityOf(AlertKind.plan_price_changed)).isEqualTo(AlertMessage.Severity.info);
     }
 
     private AlertRule rule(AlertKind kind, Enums.Channel channel, BigDecimal threshold, boolean scoped) {
@@ -179,7 +222,7 @@ class AlertEngineTest {
         recent.set(down);
         assertThat(engine.evaluate(EnumSet.of(AlertKind.site_down))).isEqualTo(1);
         assertThat(fired).hasSize(2);
-        Mockito.verify(notifier, Mockito.times(2)).notify(eq(Enums.Channel.whatsapp), anyString(), any(), eq(true));
+        Mockito.verify(notifier, Mockito.times(2)).notify(eq(Enums.Channel.whatsapp), any(AlertMessage.class), eq(true));
     }
 
     @Test
@@ -233,7 +276,7 @@ class AlertEngineTest {
         assertThat(fired).hasSize(1);
         assertThat(fired.get(0).isDelivered()).isFalse();
         assertThat(fired.get(0).getChannel()).isEqualTo("in_app");
-        Mockito.verify(notifier).notify(eq(Enums.Channel.in_app), anyString(), any(), eq(false));
+        Mockito.verify(notifier).notify(eq(Enums.Channel.in_app), any(AlertMessage.class), eq(false));
     }
 
     private static UptimeCheck check(boolean ok) {

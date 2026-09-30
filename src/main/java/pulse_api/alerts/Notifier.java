@@ -35,24 +35,34 @@ public class Notifier {
 
     /** {@code alsoEmail} = the spec's "WhatsApp + email" for site-down alerts. */
     public Delivery notify(Enums.Channel requested, String title, String body, boolean alsoEmail) {
+        return notify(requested, AlertMessage.plain(title, body), alsoEmail);
+    }
+
+    /** A structured alert: WhatsApp gets the text, email gets the rendered card. */
+    public Delivery notify(Enums.Channel requested, AlertMessage message, boolean alsoEmail) {
         Enums.Channel channel = resolve(requested);
         boolean delivered = false;
         String used = "in_app";
         if (channel == Enums.Channel.whatsapp) {
-            delivered = whatsapp.send(title + "\n" + body);
+            delivered = whatsapp.send(message.asText());
             used = "whatsapp";
         } else if (channel == Enums.Channel.email) {
-            delivered = email.send(title, body);
+            delivered = sendEmail(message);
             used = "email";
         }
         if (alsoEmail && channel != Enums.Channel.email && email.configured()) {
-            boolean emailed = email.send(title, body);
+            boolean emailed = sendEmail(message);
             if (emailed) {
                 used = delivered ? used + "+email" : "email";
                 delivered = true;
             }
         }
         return new Delivery(delivered, used);
+    }
+
+    private boolean sendEmail(AlertMessage message) {
+        // a plain message (no kind) keeps its caller-chosen subject; an alert gets the severity prefix
+        return message.kind() == null ? email.send(message.title(), message.detail()) : email.sendAlert(message);
     }
 
     Enums.Channel resolve(Enums.Channel requested) {
