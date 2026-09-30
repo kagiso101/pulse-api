@@ -140,6 +140,34 @@ class AlertEngineTest {
     }
 
     @Test
+    void aBurstOfBookvasEventsCollapsesIntoOneSummaryAlert() {
+        rule(AlertKind.checkout_stalled, Enums.Channel.email, null, true);
+        List<BookvasPlatformEvent> burst = new ArrayList<>();
+        Instant base = Instant.now().minusSeconds(3600);
+        for (int i = 0; i < 32; i++) {
+            BookvasPlatformEvent e = new BookvasPlatformEvent();
+            e.setId(UUID.randomUUID());
+            e.setEventType("CHECKOUT_STALLED");
+            e.setSeverity("WARNING");
+            e.setTenantName("Tenant " + i);
+            e.setMessage("Deposit checkout of R150.00 at Tenant " + i + " has had no PayFast confirmation for " + (60 + i) + " minutes.");
+            e.setHappenedAt(base.plusSeconds(i * 3L));
+            burst.add(e);
+        }
+        when(platformEvents.findTop50ByEventTypeAndHappenedAtGreaterThanOrderByHappenedAtAsc(eq("CHECKOUT_STALLED"), any()))
+                .thenReturn(burst);
+
+        assertThat(engine.evaluate(EnumSet.of(AlertKind.checkout_stalled))).isEqualTo(1);
+        assertThat(engine.evaluate(EnumSet.of(AlertKind.checkout_stalled))).isZero();
+
+        assertThat(fired).hasSize(1);
+        assertThat(fired.get(0).getTitle()).isEqualTo("32 stalled checkouts on Bookvas");
+        assertThat(fired.get(0).getDetail()).contains("…and 27 more");
+        assertThat(fired.get(0).getPayload()).containsEntry("count", 32);
+        assertThat(fired.get(0).getDedupeKey()).startsWith("bookvas_event_batch:CHECKOUT_STALLED:");
+    }
+
+    @Test
     void providerDegradedIsCritical() {
         assertThat(AlertMessage.severityOf(AlertKind.payment_provider_degraded)).isEqualTo(AlertMessage.Severity.critical);
         assertThat(AlertMessage.severityOf(AlertKind.plan_price_changed)).isEqualTo(AlertMessage.Severity.info);

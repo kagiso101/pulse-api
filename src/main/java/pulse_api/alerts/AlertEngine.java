@@ -52,6 +52,9 @@ import java.util.UUID;
 public class AlertEngine {
 
     private static final String PURCHASE_EVENT = "event:purchase";
+    // OPS-VISIBILITY: more Bookvas events of one type than this in one evaluation → one summary alert
+    static final int BATCH_THRESHOLD = 5;
+    private static final int BATCH_PREVIEW = 5;
     private static final BigDecimal DEFAULT_EMAIL_THRESHOLD = BigDecimal.valueOf(3);
 
     private final AlertRuleRepository rules;
@@ -303,23 +306,66 @@ public class AlertEngine {
                 : bookvasProjects(rule).stream().map(Project::getId).findFirst().orElse(null);
 
         Instant newest = since;
-        for (BookvasPlatformEvent e : platformEvents.findTop50ByEventTypeAndHappenedAtGreaterThanOrderByHappenedAtAsc(eventType, since)) {
-            Map<String, Object> payload = new HashMap<>();
-            payload.put("bookvasEventId", e.getId().toString());
-            payload.put("eventType", e.getEventType());
-            payload.put("severity", e.getSeverity());
-            payload.put("happenedAt", e.getHappenedAt().toString());
-            if (e.getTenantId() != null) payload.put("tenantId", e.getTenantId().toString());
-            if (e.getTenantName() != null) payload.put("tenant", e.getTenantName());
-            out.add(new Candidate("bookvas_event:" + e.getId(), projectId, opsTitle(eventType, e), e.getMessage(), payload));
+        List<BookvasPlatformEvent> fresh = platformEvents.findTop50ByEventTypeAndHappenedAtGreaterThanOrderByHappenedAtAsc(eventType, since);
+        for (BookvasPlatformEvent e : fresh) {
             if (e.getHappenedAt().isAfter(newest)) {
                 newest = e.getHappenedAt();
+            }
+        }
+        if (fresh.size() > BATCH_THRESHOLD) {
+            // a burst (a backfill, a provider outage) becomes ONE email, not fifty — the individual
+            // rows are all on the Bookvas Operations page anyway
+            out.add(batch(eventType, fresh, projectId, newest));
+        } else {
+            for (BookvasPlatformEvent e : fresh) {
+                Map<String, Object> payload = new HashMap<>();
+                payload.put("bookvasEventId", e.getId().toString());
+                payload.put("eventType", e.getEventType());
+                payload.put("severity", e.getSeverity());
+                payload.put("happenedAt", e.getHappenedAt().toString());
+                if (e.getTenantId() != null) payload.put("tenantId", e.getTenantId().toString());
+                if (e.getTenantName() != null) payload.put("tenant", e.getTenantName());
+                out.add(new Candidate("bookvas_event:" + e.getId(), projectId, opsTitle(eventType, e), e.getMessage(), payload));
             }
         }
         if (newest.isAfter(since)) {
             saveText(stateKey, newest.toString());
         }
         return out;
+    }
+
+    /** More than {@link #BATCH_THRESHOLD} events of one type in one evaluation collapse into a single alert. */
+    private static Candidate batch(String eventType, List<BookvasPlatformEvent> events, UUID projectId, Instant newest) {
+        BookvasPlatformEvent first = events.get(0);
+        BookvasPlatformEvent last = events.get(events.size() - 1);
+        StringBuilder detail = new StringBuilder();
+        detail.append(events.size()).append(" ").append(opsNoun(eventType)).append(" were reported between ")
+              .append(first.getHappenedAt()).append(" and ").append(last.getHappenedAt()).append(".\n\n");
+        int shown = Math.min(BATCH_PREVIEW, events.size());
+        for (int i = 0; i < shown; i++) {
+            detail.append("• ").append(events.get(i).getMessage()).append('\n');
+        }
+        if (events.size() > shown) {
+            detail.append("…and ").append(events.size() - shown).append(" more. See the Operations page in the Bookvas admin.");
+        }
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("eventType", eventType);
+        payload.put("count", events.size());
+        payload.put("firstAt", first.getHappenedAt().toString());
+        payload.put("lastAt", last.getHappenedAt().toString());
+        String title = events.size() + " " + opsNoun(eventType) + " on Bookvas";
+        return new Candidate("bookvas_event_batch:" + eventType + ":" + newest, projectId, title, detail.toString(), payload);
+    }
+
+    private static String opsNoun(String eventType) {
+        return switch (eventType) {
+            case "CHECKOUT_STALLED" -> "stalled checkouts";
+            case "PAYMENT_PROVIDER_DEGRADED" -> "provider-degraded alerts";
+            case "SIGNUP_RATE_LIMITED" -> "refused signups";
+            case "PLAN_PRICE_CHANGED" -> "plan price changes";
+            case "MERCHANT_VERIFICATION_STALLED" -> "stalled merchant verifications";
+            default -> eventType.toLowerCase().replace('_', ' ') + " events";
+        };
     }
 
     private static String opsTitle(String eventType, BookvasPlatformEvent e) {
