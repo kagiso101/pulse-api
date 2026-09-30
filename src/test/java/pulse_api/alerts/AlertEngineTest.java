@@ -75,7 +75,7 @@ class AlertEngineTest {
         bookvas.setSlug("bookvas");
         bookvas.setName("Bookvas");
         bookvas.setKind(Enums.ProjectKind.product);
-        bookvas.setSiteUrl("https://rt-bookings.netlify.app");
+        bookvas.setSiteUrl("https://bookvas.co.za");
         bookvas.setActive(true);
 
         when(states.findById(anyString())).thenAnswer(i -> Optional.ofNullable(stateStore.get(i.getArgument(0, String.class))));
